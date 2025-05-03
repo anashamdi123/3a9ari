@@ -1,0 +1,546 @@
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, Image, TouchableOpacity, Dimensions, Linking, SafeAreaView, StatusBar, Modal } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { supabase, Property } from '@/lib/supabase';
+import { Theme } from '@/constants/theme';
+import { Button } from '@/components/Button';
+import { Phone, MapPin, ChevronRight, ChevronLeft, Heart, ArrowLeft, X } from 'lucide-react-native';
+import { useFavorites } from '@/hooks/useFavorites';
+import { useAuthContext } from '@/context/auth-context';
+import { CURRENCY, AREA_UNIT } from '@/constants/config';
+import { GestureHandlerRootView, PinchGestureHandler, PinchGestureHandlerGestureEvent, TapGestureHandler, State } from 'react-native-gesture-handler';
+import Animated, { useAnimatedGestureHandler, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+
+const { width } = Dimensions.get('window');
+
+export default function PropertyDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const [property, setProperty] = useState<Property | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  
+  const { isAuthenticated } = useAuthContext();
+  const { isFavorite, toggleFavorite } = useFavorites();
+  
+  useEffect(() => {
+    fetchProperty();
+  }, [id]);
+  
+  const fetchProperty = async () => {
+    try {
+      setLoading(true);
+      
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      
+      setProperty(data);
+    } catch (error) {
+      console.error('Error fetching property:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleCall = () => {
+    if (property?.phone_number) {
+      Linking.openURL(`tel:${property.phone_number}`);
+    }
+  };
+  
+  const handleFavoriteToggle = () => {
+    if (!isAuthenticated) {
+      router.push('/auth/login');
+      return;
+    }
+    
+    if (property) {
+      toggleFavorite(property.id);
+    }
+  };
+  
+  const nextImage = () => {
+    if (property && currentImageIndex < property.images.length - 1) {
+      setCurrentImageIndex(currentImageIndex + 1);
+    }
+  };
+  
+  const prevImage = () => {
+    if (currentImageIndex > 0) {
+      setCurrentImageIndex(currentImageIndex - 1);
+    }
+  };
+  
+  const onPinchGestureEvent = useAnimatedGestureHandler<PinchGestureHandlerGestureEvent>({
+    onActive: (event) => {
+      scale.value = savedScale.value * event.scale;
+    },
+    onEnd: () => {
+      savedScale.value = scale.value;
+    },
+  });
+
+  const onDoubleTap = useAnimatedGestureHandler({
+    onActive: () => {
+      if (scale.value > 1) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+      } else {
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+      }
+    },
+  });
+
+  const onSingleTap = useAnimatedGestureHandler({
+    onActive: () => {
+      handleCloseFullscreen();
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+    };
+  });
+
+  const handleImagePress = () => {
+    setIsFullscreen(true);
+  };
+
+  const handleCloseFullscreen = () => {
+    setIsFullscreen(false);
+    scale.value = withSpring(1);
+    savedScale.value = 1;
+  };
+  
+  if (loading || !property) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>جاري التحميل...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  
+  const isFav = isFavorite(property.id);
+  
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Theme.colors.background.light} />
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={24} color={Theme.colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {property.title}
+          </Text>
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            onPress={handleFavoriteToggle}
+            activeOpacity={0.7}
+          >
+            <Heart
+              size={24}
+              color={isFav ? Theme.colors.error : Theme.colors.text.primary}
+              fill={isFav ? Theme.colors.error : 'transparent'}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.imageContainer}>
+            <TouchableOpacity onPress={handleImagePress} activeOpacity={1}>
+              <Image
+                source={{ 
+                  uri: property.images[currentImageIndex] || 'https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg'
+                }}
+                style={styles.image}
+              />
+            </TouchableOpacity>
+            
+            {property.images.length > 1 && (
+              <>
+                <TouchableOpacity style={styles.imageNavLeft} onPress={nextImage}>
+                  <ChevronLeft color="white" size={24} />
+                </TouchableOpacity>
+                
+                <TouchableOpacity style={styles.imageNavRight} onPress={prevImage}>
+                  <ChevronRight color="white" size={24} />
+                </TouchableOpacity>
+                
+                <View style={styles.imageCounter}>
+                  <Text style={styles.imageCounterText}>
+                    {currentImageIndex + 1}/{property.images.length}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+          
+          <View style={styles.detailsContainer}>
+            <Text style={styles.price}>
+              {property.price.toLocaleString()} {CURRENCY}
+            </Text>
+            
+            <Text style={styles.title}>{property.title}</Text>
+            
+            <View style={styles.locationContainer}>
+              <MapPin size={18} color={Theme.colors.text.secondary} />
+              <Text style={styles.location}>{property.location}</Text>
+            </View>
+            
+            <View style={styles.infoContainer}>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>المساحة</Text>
+                <Text style={styles.infoValue}>
+                  {property.size} {AREA_UNIT}
+                </Text>
+              </View>
+              
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>تاريخ الإضافة</Text>
+                <Text style={styles.infoValue}>
+                  {new Date(property.created_at).toLocaleDateString()}
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.descriptionContainer}>
+              <Text style={styles.descriptionTitle}>الوصف</Text>
+              <Text style={styles.description}>{property.description}</Text>
+            </View>
+          </View>
+        </ScrollView>
+        
+        <View style={styles.footer}>
+          <Button
+            title="اتصل بالمالك"
+            onPress={handleCall}
+            icon={<Phone size={20} color="white" style={{ marginLeft: 8 }} />}
+          />
+        </View>
+
+        <Modal
+          visible={isFullscreen}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={handleCloseFullscreen}
+        >
+          <View style={styles.fullscreenContainer}>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={handleCloseFullscreen}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={24} color="white" />
+            </TouchableOpacity>
+            
+            <TapGestureHandler
+              onHandlerStateChange={onSingleTap}
+              numberOfTaps={1}
+            >
+              <TapGestureHandler
+                onHandlerStateChange={onDoubleTap}
+                numberOfTaps={2}
+              >
+                <PinchGestureHandler onGestureEvent={onPinchGestureEvent}>
+                  <Animated.View style={[styles.fullscreenImageContainer, animatedStyle]}>
+                    <Image
+                      source={{ 
+                        uri: property.images[currentImageIndex] || 'https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg'
+                      }}
+                      style={styles.fullscreenImage}
+                      resizeMode="contain"
+                    />
+                  </Animated.View>
+                </PinchGestureHandler>
+              </TapGestureHandler>
+            </TapGestureHandler>
+            
+            {property.images.length > 1 && (
+              <>
+                <TouchableOpacity 
+                  style={[styles.fullscreenNav, styles.fullscreenNavLeft]} 
+                  onPress={nextImage}
+                  activeOpacity={0.7}
+                >
+                  <ChevronLeft color="white" size={24} />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.fullscreenNav, styles.fullscreenNavRight]} 
+                  onPress={prevImage}
+                  activeOpacity={0.7}
+                >
+                  <ChevronRight color="white" size={24} />
+                </TouchableOpacity>
+                
+                <View style={styles.fullscreenCounter}>
+                  <Text style={styles.fullscreenCounterText}>
+                    {currentImageIndex + 1}/{property.images.length}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        </Modal>
+      </SafeAreaView>
+    </GestureHandlerRootView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.light,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontFamily: 'Tajawal-Medium',
+    fontSize: Theme.fontSizes.lg,
+    color: Theme.colors.text.secondary,
+  },
+  imageContainer: {
+    width: '100%',
+    height: Dimensions.get('window').height * 0.5,
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  imageNavLeft: {
+    position: 'absolute',
+    left: Theme.spacing.md,
+    top: '50%',
+    transform: [{ translateY: -20 }],
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageNavRight: {
+    position: 'absolute',
+    right: Theme.spacing.md,
+    top: '50%',
+    transform: [{ translateY: -20 }],
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageCounter: {
+    position: 'absolute',
+    bottom: Theme.spacing.md,
+    left: '50%',
+    transform: [{ translateX: -30 }],
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 15,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  imageCounterText: {
+    fontFamily: 'Tajawal-Medium',
+    color: 'white',
+    fontSize: Theme.fontSizes.sm,
+  },
+  detailsContainer: {
+    padding: Theme.spacing.lg,
+  },
+  price: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.xxl,
+    color: Theme.colors.primary,
+    marginBottom: Theme.spacing.sm,
+  },
+  title: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.xl,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  location: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.secondary,
+    marginRight: Theme.spacing.xs,
+  },
+  infoContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.lg,
+    backgroundColor: Theme.colors.background.main,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+  },
+  infoItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.sm,
+    color: Theme.colors.text.secondary,
+    marginBottom: Theme.spacing.xs,
+  },
+  infoValue: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+  },
+  descriptionContainer: {
+    backgroundColor: Theme.colors.background.main,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.lg,
+  },
+  descriptionTitle: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.lg,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
+  },
+  description: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.secondary,
+    lineHeight: 24,
+    textAlign: 'right',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.border,
+    padding: Theme.spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.md,
+    backgroundColor: Theme.colors.background.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.border,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  backButton: {
+    padding: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.round,
+    backgroundColor: Theme.colors.background.light,
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.lg,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginHorizontal: Theme.spacing.md,
+  },
+  favoriteButton: {
+    padding: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.round,
+    backgroundColor: Theme.colors.background.light,
+  },
+  fullscreenContainer: {
+    flex: 1,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImageContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    zIndex: 1,
+  },
+  fullscreenNav: {
+    position: 'absolute',
+    top: '50%',
+    transform: [{ translateY: -20 }],
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  fullscreenNavLeft: {
+    left: 20,
+  },
+  fullscreenNavRight: {
+    right: 20,
+  },
+  fullscreenCounter: {
+    position: 'absolute',
+    bottom: 40,
+    left: '50%',
+    transform: [{ translateX: -30 }],
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 15,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    zIndex: 1,
+  },
+  fullscreenCounterText: {
+    fontFamily: 'Tajawal-Medium',
+    color: 'white',
+    fontSize: Theme.fontSizes.sm,
+  },
+});
