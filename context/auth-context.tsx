@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase';
+import * as SecureStore from 'expo-secure-store';
 
 type UserProfile = Database['public']['Tables']['users']['Row'];
 
@@ -11,7 +12,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ error: any }>;
-  register: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  register: (email: string, password: string, fullName: string, phoneNumber: string) => Promise<{ error: any }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -34,14 +35,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    checkUser();
-    
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
+  // Function to restore session from storage
+  const restoreSession = async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        throw error;
+      }
+
+      if (session) {
         setUser(session.user);
         await fetchUserProfile(session.user.id);
-      } else {
+      }
+    } catch (error) {
+      console.error('Error restoring session:', error);
+      // Clear any invalid session data
+      await supabase.auth.signOut();
+      setUser(null);
+      setProfile(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial session check
+    restoreSession();
+    
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        setUser(session.user);
+        await fetchUserProfile(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setProfile(null);
       }
@@ -56,21 +83,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Check session expiration periodically
   useEffect(() => {
     const checkSessionExpiration = async () => {
-      
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.expires_at) {
         const expiresAt = new Date(session.expires_at * 1000);
         const now = new Date();
         if (expiresAt < now) {
-          // Session expired, handle accordingly
           await logout();
         }
       }
     };
 
-    // Check session expiration every minute
     const expirationInterval = setInterval(checkSessionExpiration, 60000);
-
     return () => clearInterval(expirationInterval);
   }, []);
 
@@ -83,7 +106,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date();
         const timeUntilExpiry = expiresAt.getTime() - now.getTime();
         
-        // Refresh token if it's about to expire (within 5 minutes)
         if (timeUntilExpiry < 5 * 60 * 1000) {
           const { error } = await supabase.auth.refreshSession();
           if (error) {
@@ -94,25 +116,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Check token expiration every minute
     const refreshInterval = setInterval(refreshToken, 60000);
-
     return () => clearInterval(refreshInterval);
   }, []);
-
-  async function checkUser() {
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        setUser(data.session.user);
-        await fetchUserProfile(data.session.user.id);
-      }
-    } catch (error) {
-      console.error('Error checking user:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   async function fetchUserProfile(userId: string) {
     try {
@@ -124,7 +130,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         if (error.message.includes('JWT expired')) {
-          // Handle expired token
           await logout();
           return;
         }
@@ -170,10 +175,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  async function register(email: string, password: string, fullName: string) {
+  async function register(email: string, password: string, fullName: string, phoneNumber: string) {
     try {
       // Validate input
-      if (!email || !password || !fullName) {
+      if (!email || !password || !fullName || !phoneNumber) {
         return {
           error: {
             message: 'جميع الحقول مطلوبة'
@@ -205,13 +210,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         options: {
           data: {
-            full_name: fullName
+            full_name: fullName,
+            phone_number: phoneNumber
           }
         }
       });
 
       if (signUpError) {
-        // Handle specific Supabase auth errors
         switch (signUpError.message) {
           case 'User already registered':
             return {
@@ -242,20 +247,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // Create user profile with error handling
+      // Create user profile
       const { error: profileError } = await supabase
         .from('users')
         .upsert({
           id: signUpData.user.id,
           email: email,
-          full_name: fullName
+          full_name: fullName,
+          phone_number: phoneNumber
         }, {
           onConflict: 'id',
           ignoreDuplicates: false
         });
 
       if (profileError) {
-        // Handle specific database errors
         switch (profileError.code) {
           case '23505': // Duplicate key
             console.log('User profile already exists, continuing...');

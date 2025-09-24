@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, SafeAreaView, TouchableOpacity, TextInput, Alert, FlatList, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, SafeAreaView, TouchableOpacity, TextInput, FlatList, ScrollView, Dimensions, Modal, Pressable, RefreshControl, Alert as RNAlert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Theme } from '@/constants/theme';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { useAuthContext } from '@/context/auth-context';
-import { LogOut, CreditCard as Edit3, Clipboard, User as UserIcon, ArrowLeft, Trash2 } from 'lucide-react-native';
+import { LogOut, CreditCard as Edit3, Clipboard, User as UserIcon, ArrowLeft, Trash2, X, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useProperties } from '@/hooks/useProperties';
-import { PropertyCard } from '@/components/PropertyCard';
-import { Toast } from '@/components/Toast';
+import { UserPropertyCard } from '@/components/UserPropertyCard';
+import { useToast } from '@/context/ToastContext';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Property } from '@/lib/supabase';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -23,74 +25,137 @@ type StatusGroup = {
 export default function ProfileScreen() {
   const router = useRouter();
   const { isAuthenticated, profile, logout, refreshProfile } = useAuthContext();
+  const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [isLoading, setIsLoading] = useState(false);
   const [showProperties, setShowProperties] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   const { properties: myProperties, loading: loadingProperties, refreshing, handleRefresh } = useProperties({
     ownerId: profile?.id
   });
   
+  // Update fullName when profile changes
+  useEffect(() => {
+    setFullName(profile?.full_name || '');
+  }, [profile?.full_name]);
+  
+  // Check if the name has changed
+  const hasNameChanged = fullName.trim() !== (profile?.full_name || '').trim();
+  const isNameValid = fullName.trim().length >= 3 && fullName.trim().length <= 30;
+  const canSave = hasNameChanged && isNameValid;
+  
   const handleLogin = () => {
     router.push('/auth/login');
   };
   
-  const handleLogout = async () => {
-    Alert.alert(
+  const handleLogout = () => {
+    RNAlert.alert(
       'تسجيل الخروج',
       'هل أنت متأكد من رغبتك في تسجيل الخروج؟',
       [
+        { text: 'إلغاء', style: 'cancel' },
         {
-          text: 'إلغاء',
-          style: 'cancel',
-        },
-        {
-          text: 'تسجيل الخروج',
-          onPress: async () => {
-            try {
-              await logout();
-              setToast({ message: 'تم تسجيل الخروج بنجاح', type: 'success' });
-              setTimeout(() => {
-                router.replace('/(tabs)');
-              }, 1500);
-            } catch (error) {
-              setToast({ message: 'فشل تسجيل الخروج', type: 'error' });
-            }
-          },
+          text: 'تأكيد',
           style: 'destructive',
+          onPress: () => handleLogoutConfirm(),
         },
       ]
     );
   };
   
-  const handleEditProfile = async () => {
-    if (isEditing) {
-      try {
-        setIsLoading(true);
-        
-        const { error } = await supabase
-          .from('users')
-          .update({ full_name: fullName })
-          .eq('id', profile?.id);
-        
-        if (error) throw error;
-        
-        await refreshProfile();
-        setIsEditing(false);
-      } catch (error: any) {
-        Alert.alert('خطأ', 'فشل تحديث الملف الشخصي');
-      } finally {
-        setIsLoading(false);
+  const handleLogoutConfirm = async () => {
+            try {
+              await logout();
+              showToast('تم تسجيل الخروج بنجاح', 'success');
+              setTimeout(() => {
+                router.replace('/(tabs)');
+              }, 1500);
+            } catch (error) {
+              showToast('فشل تسجيل الخروج', 'error');
+            }
+  };
+  
+  const handleEditProfile = () => {
+    router.push('../profile/edit-profile');
+  };
+
+  const handleChangePassword = () => {
+    router.push('../profile/change-password');
+  };
+
+  const handleSavePassword = async () => {
+    try {
+      if (!currentPassword.trim()) {
+        setTimeout(() => showToast('يرجى إدخال كلمة المرور الحالية', 'error'), 300);
+        return;
       }
-    } else {
-      setIsEditing(true);
+      if (!newPassword.trim()) {
+        setTimeout(() => showToast('يرجى إدخال كلمة المرور الجديدة', 'error'), 300);
+        return;
+      }
+      if (newPassword.length < 6) {
+        setTimeout(() => showToast('يجب أن تتكون كلمة المرور الجديدة من 6 أحرف على الأقل', 'error'), 300);
+        return;
+      }
+      if (newPassword !== confirmNewPassword) {
+        setTimeout(() => showToast('كلمات المرور الجديدة غير متطابقة', 'error'), 300);
+        return;
+      }
+      
+      setIsLoading(true);
+      
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      
+      if (error) throw error;
+      
+      setTimeout(() => showToast('تم تغيير كلمة المرور بنجاح', 'success'), 300);
+    } catch (error: any) {
+      setTimeout(() => showToast(error.message || 'فشل تغيير كلمة المرور', 'error'), 300);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      if (!fullName.trim()) {
+        showToast('يرجى إدخال الاسم الكامل', 'error');
+        return;
+      }
+      if (fullName.trim().length < 3 || fullName.trim().length > 30) {
+        showToast('يجب أن يتكون الاسم من 3 إلى 30 حرفًا', 'error');
+        return;
+      }
+      
+      setIsLoading(true);
+      
+      const { error } = await supabase
+        .from('users')
+        .update({ full_name: fullName })
+        .eq('id', profile?.id);
+      
+      if (error) throw error;
+      
+      await refreshProfile();
+      showToast('تم تحديث الملف الشخصي بنجاح', 'success');
+    } catch (error: any) {
+      console.error('فشل تحديث الملف الشخصي', error);
+    } finally {
+      setIsLoading(false);
     }
   };
   
   const handleMyListings = () => {
-    setShowProperties(!showProperties);
+    router.push('../profile/my-properties');
   };
 
   const getStatusColor = (status: string) => {
@@ -154,77 +219,85 @@ export default function ProfileScreen() {
     ].filter(group => group.properties.length > 0);
   };
 
-  const handleDeleteProperty = async (propertyId: string) => {
-    Alert.alert(
+  const handleDeleteProperty = (propertyId: string) => {
+    RNAlert.alert(
       'حذف العقار',
       'هل أنت متأكد من رغبتك في حذف هذا العقار؟',
       [
-        {
-          text: 'إلغاء',
-          style: 'cancel',
-        },
+        { text: 'إلغاء', style: 'cancel' },
         {
           text: 'حذف',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              
-              const { error } = await supabase
-                .from('properties')
-                .delete()
-                .eq('id', propertyId);
-              
-              if (error) throw error;
-              
-              setToast({ message: 'تم حذف العقار بنجاح', type: 'success' });
-              handleRefresh();
-            } catch (error: any) {
-              setToast({ message: 'فشل حذف العقار', type: 'error' });
-            } finally {
-              setIsLoading(false);
-            }
-          },
           style: 'destructive',
+          onPress: () => handleDeletePropertyConfirm(propertyId),
         },
       ]
     );
   };
 
+  const handleDeletePropertyConfirm = async (propertyId: string) => {
+            try {
+              setIsLoading(true);
+              const { error } = await supabase
+                .from('properties')
+                .delete()
+                .eq('id', propertyId);
+              if (error) throw error;
+              showToast('تم حذف العقار بنجاح', 'success');
+              handleRefresh();
+            } catch (error: any) {
+              showToast('فشل حذف العقار', 'error');
+            } finally {
+              setIsLoading(false);
+      }
+  };
+
+  const handleEditProperty = (property: Property) => {
+    router.push(`/property/${property.id}`);
+  };
+
   const renderStatusGroup = ({ item }: { item: StatusGroup }) => {
     return (
       <View style={styles.statusGroup}>
-        <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
-          <Text style={styles.statusText}>{item.text}</Text>
+        <View style={[styles.statusHeader, { backgroundColor: item.color + '15' }]}>
+          <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
+            <Text style={styles.statusText}>{item.text}</Text>
+          </View>
+          <Text style={styles.statusCount}>{item.properties.length} عقار</Text>
         </View>
-        <FlatList
-          data={item.properties}
-          renderItem={({ item: property }) => (
-            <View style={styles.propertyItem}>
-              <PropertyCard property={property} />
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDeleteProperty(property.id)}
-                disabled={isLoading}
-              >
-                <Trash2 size={20} color={Theme.colors.error} />
-              </TouchableOpacity>
+        <View style={styles.propertiesList}>
+          {item.properties.map((property) => (
+            <View 
+              key={property.id} 
+              style={styles.propertyItem}
+            >
+              <UserPropertyCard 
+                property={property}
+                onEdit={handleEditProperty}
+                onDelete={handleDeleteProperty}
+                onCardPress={() => setShowProperties(false)}
+              />
             </View>
-          )}
-          keyExtractor={(property) => property.id}
-          numColumns={2}
-          columnWrapperStyle={styles.columnWrapper}
-          contentContainerStyle={styles.propertiesList}
-        />
+          ))}
+        </View>
       </View>
     );
   };
   
+  const windowWidth = Dimensions.get('window').width;
+  const isTablet = windowWidth >= 768;
+  const isDesktop = windowWidth >= 1024;
+
+  // Calculate number of columns based on screen size
+  const numColumns = isDesktop ? 4 : isTablet ? 3 : 2;
+
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
         <Header title="الملف الشخصي" />
         <View style={styles.centerContainer}>
-          <UserIcon size={64} color={Theme.colors.primary} />
+          <View style={styles.iconContainer}>
+            <UserIcon size={64} color={Theme.colors.primary} />
+          </View>
           <Text style={styles.title}>الملف الشخصي</Text>
           <Text style={styles.message}>
             قم بتسجيل الدخول للوصول إلى ملفك الشخصي وإدارة حسابك
@@ -242,8 +315,8 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Header title="الملف الشخصي" />
-      {!showProperties ? (
-        <View style={styles.profileContainer}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} scrollEventThrottle={16}>
+        <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
@@ -251,84 +324,64 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <View style={styles.profileInfo}>
-              {isEditing ? (
-                <TextInput
-                  style={styles.nameInput}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="أدخل اسمك الكامل"
-                  placeholderTextColor={Theme.colors.text.light}
-                />
-              ) : (
-                <Text style={styles.profileName}>{profile?.full_name || 'المستخدم'}</Text>
-              )}
+              <Text style={styles.profileName}>{profile?.full_name || 'المستخدم'}</Text>
               <Text style={styles.profileEmail}>{profile?.email || ''}</Text>
+              {profile?.phone_number && (
+                <Text style={styles.profileEmail}>{profile.phone_number}</Text>
+              )}
             </View>
           </View>
-          
+        </View>
+
+        <View style={styles.menuContainer}>
           <TouchableOpacity 
             style={styles.menuItem} 
             onPress={handleEditProfile}
-            disabled={isLoading}
           >
-            <Edit3 size={20} color={Theme.colors.text.primary} />
-            <Text style={styles.menuItemText}>
-              {isEditing ? 'حفظ التغييرات' : 'تعديل الملف الشخصي'}
-            </Text>
-            {isLoading && (
-              <View style={styles.loadingIndicator} />
-            )}
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: Theme.colors.primary + '15' }]}>
+                <Edit3 size={24} color={Theme.colors.primary} />
+              </View>
+              <Text style={styles.menuItemText}>تعديل الملف الشخصي</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={handleChangePassword}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: Theme.colors.warning + '15' }]}>
+                <UserIcon size={24} color={Theme.colors.warning} />
+              </View>
+              <Text style={styles.menuItemText}>تغيير كلمة المرور</Text>
+            </View>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.menuItem} onPress={handleMyListings}>
-            <Clipboard size={20} color={Theme.colors.text.primary} />
-            <Text style={styles.menuItemText}>
-              عقاراتي ({loadingProperties ? '...' : myProperties.length})
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
-            <LogOut size={20} color={Theme.colors.error} />
-            <Text style={[styles.menuItemText, styles.logoutText]}>تسجيل الخروج</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.propertiesContainer}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={handleMyListings}
-          >
-            <View style={styles.backButtonContent}>
-              <ArrowLeft size={20} color={Theme.colors.primary} />
-              <Text style={styles.backButtonText}>رجوع للملف الشخصي</Text>
-            </View>
-          </TouchableOpacity>
-          
-        <FlatList
-            data={getStatusGroups(myProperties)}
-            renderItem={renderStatusGroup}
-            keyExtractor={(group) => group.status}
-            contentContainerStyle={styles.groupsList}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {loadingProperties ? 'جاري التحميل...' : 'لم تقم بإضافة أي عقارات بعد'}
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: Theme.colors.success + '15' }]}>
+                <Clipboard size={24} color={Theme.colors.success} />
+              </View>
+              <Text style={styles.menuItemText}>
+                عقاراتي ({loadingProperties ? '...' : myProperties.length})
               </Text>
             </View>
-          }
-          />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.menuItem, styles.logoutItem]} 
+            onPress={handleLogout}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: Theme.colors.error + '15' }]}>
+                <LogOut size={24} color={Theme.colors.error} />
+              </View>
+              <Text style={[styles.menuItemText, styles.logoutText]}>تسجيل الخروج</Text>
+            </View>
+          </TouchableOpacity>
         </View>
-      )}
-      
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -336,8 +389,10 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background.light,
-    paddingBottom: 80,
+    backgroundColor: Theme.colors.background.main,
+  },
+  scrollView: {
+    flex: 1,
   },
   centerContainer: {
     flex: 1,
@@ -345,70 +400,92 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Theme.spacing.xl,
   },
-  profileContainer: {
-    padding: Theme.spacing.lg,
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: Theme.colors.background.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.lg,
+    ...Theme.shadows.medium,
+  },
+  profileHeader: {
+    marginBottom: Theme.spacing.md,
+    marginTop: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.md,
   },
   avatarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+    backgroundColor: Theme.colors.background.card,
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.lg,
+    ...Theme.shadows.medium,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Theme.colors.primary,
+    backgroundColor: Theme.colors.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     fontFamily: 'Tajawal-Bold',
     fontSize: Theme.fontSizes.xxl,
-    color: 'white',
+    color: Theme.colors.primary,
   },
   profileInfo: {
-    marginRight: Theme.spacing.lg,
+    marginLeft: Theme.spacing.sm,
     flex: 1,
   },
   profileName: {
     fontFamily: 'Tajawal-Bold',
-    fontSize: Theme.fontSizes.lg,
+    fontSize: Theme.fontSizes.xl,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
-  },
-  nameInput: {
-    fontFamily: 'Tajawal-Regular',
-    fontSize: Theme.fontSizes.lg,
-    color: Theme.colors.text.primary,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-    borderRadius: Theme.borderRadius.md,
-    padding: Theme.spacing.sm,
     marginBottom: Theme.spacing.xs,
   },
   profileEmail: {
     fontFamily: 'Tajawal-Regular',
-    fontSize: Theme.fontSizes.sm,
+    fontSize: Theme.fontSizes.md,
     color: Theme.colors.text.secondary,
+  },
+  menuContainer: {
+    padding: Theme.spacing.lg,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: Theme.spacing.lg,
-    backgroundColor: 'white',
-    borderRadius: Theme.borderRadius.md,
+    backgroundColor: Theme.colors.background.card,
+    borderRadius: Theme.borderRadius.lg,
     marginBottom: Theme.spacing.md,
+    ...Theme.shadows.small,
   },
-  logoutItem: {
-    marginTop: Theme.spacing.lg,
-    backgroundColor: Theme.colors.error + '10',
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },  
+  menuIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Theme.spacing.md,
   },
   menuItemText: {
     fontFamily: 'Tajawal-Medium',
     fontSize: Theme.fontSizes.md,
     color: Theme.colors.text.primary,
-    marginRight: Theme.spacing.md,
     flex: 1,
+  },
+  logoutItem: {
+    marginTop: Theme.spacing.lg,
+    backgroundColor: Theme.colors.error + '15',
   },
   logoutText: {
     color: Theme.colors.error,
@@ -441,37 +518,135 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginLeft: Theme.spacing.sm,
   },
-  propertiesContainer: {
+  modalOverlay: {
     flex: 1,
+    backgroundColor: Theme.colors.overlay,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: Theme.colors.background.main,
+    borderTopLeftRadius: Theme.borderRadius.xl,
+    borderTopRightRadius: Theme.borderRadius.xl,
+    minHeight: '80%',
+    maxHeight: '90%',
+    paddingBottom: Theme.spacing.xl,
+    width: '100%',
+    maxWidth: 480,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Theme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.border,
+  },
+  modalTitle: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.xl,
+    color: Theme.colors.text.primary,
+  },
+  closeButton: {
+    padding: Theme.spacing.sm,
+  },
+  modalBody: {
+    padding: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.xl,
+  },
+  modalFooter: {
+    padding: Theme.spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.border,
+  },
+  inputContainer: {
+    marginBottom: Theme.spacing.lg,
+  },
+  inputLabel: {
+    fontFamily: 'Tajawal-Medium',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.secondary,
+    marginBottom: Theme.spacing.sm,
+  },
+  input: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+    backgroundColor: Theme.colors.background.card,
+  },
+  inputValue: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+    padding: Theme.spacing.md,
+    backgroundColor: Theme.colors.background.card,
+    borderRadius: Theme.borderRadius.md,
+  },
+  saveButton: {
+    width: '100%',
   },
   groupsList: {
+    padding: Theme.spacing.sm,
+    paddingBottom: Theme.spacing.xl,
+    width: '100%',
+  },
+  groupsListTablet: {
     padding: Theme.spacing.md,
+    paddingBottom: Theme.spacing.xxl,
+    width: '100%',
+  },
+  groupsListDesktop: {
+    padding: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.xxl,
+    maxWidth: 1440,
+    alignSelf: 'center',
+    width: '100%',
   },
   statusGroup: {
     marginBottom: Theme.spacing.xl,
+    backgroundColor: Theme.colors.background.card,
+    borderRadius: Theme.borderRadius.lg,
+    padding: Theme.spacing.lg,
+    ...Theme.shadows.small,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.lg,
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.md,
   },
   statusBadge: {
     paddingHorizontal: Theme.spacing.md,
     paddingVertical: Theme.spacing.sm,
     borderRadius: Theme.borderRadius.sm,
-    marginBottom: Theme.spacing.md,
-    alignSelf: 'flex-start',
   },
   statusText: {
+    fontFamily: 'Tajawal-Bold',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+  },
+  statusCount: {
     fontFamily: 'Tajawal-Medium',
     fontSize: Theme.fontSizes.md,
-    color: 'white',
+    color: Theme.colors.text.secondary,
   },
   propertiesList: {
-    paddingTop: Theme.spacing.sm,
+    padding: Theme.spacing.sm,
+    paddingBottom: Theme.spacing.xl,
+    width: '100%',
   },
   propertyItem: {
-    marginBottom: Theme.spacing.md,
-    width: '48%',
-    position: 'relative',
-  },
-  columnWrapper: {
-    justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: 480,
+    paddingHorizontal: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+    alignItems: 'center',
   },
   emptyContainer: {
     padding: Theme.spacing.xl,
@@ -483,43 +658,17 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.secondary,
     textAlign: 'center',
   },
-  backButton: {
-    backgroundColor: Theme.colors.background.main,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.md,
-    marginBottom: Theme.spacing.xl,
-    marginTop: Theme.spacing.lg,
-    marginHorizontal: Theme.spacing.md,
-    elevation: 4,
-    shadowColor: Theme.colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+  passwordContainer: {
+    position: 'relative',
   },
-  backButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Theme.spacing.sm,
+  passwordInput: {
+    paddingLeft: 40,
   },
-  backButtonText: {
-    fontFamily: 'Tajawal-Bold',
-    fontSize: Theme.fontSizes.md,
-    color: Theme.colors.primary,
-    textAlign: 'center',
-  },
-  deleteButton: {
+  eyeIcon: {
     position: 'absolute',
-    top: Theme.spacing.sm,
-    left: Theme.spacing.sm,
-    backgroundColor: 'white',
+    left: Theme.spacing.md,
+    top: '50%',
+    transform: [{ translateY: -10 }],
     padding: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.sm,
-    elevation: 2,
-    shadowColor: Theme.colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 1,
   },
 });

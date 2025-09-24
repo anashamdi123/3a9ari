@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View, Animated } from 'react-native';
+import { StyleSheet, Text, View, Animated, Platform } from 'react-native';
 import { Theme } from '@/constants/theme';
 
 interface ToastProps {
@@ -16,24 +16,41 @@ export const Toast: React.FC<ToastProps> = ({
   duration = 3000,
 }) => {
   const opacity = new Animated.Value(0);
+  const translateY = new Animated.Value(20);
 
   useEffect(() => {
-    Animated.sequence([
+    Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
-      Animated.delay(duration),
-      Animated.timing(opacity, {
+      Animated.timing(translateY, {
         toValue: 0,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
-    ]).start(() => {
-      onClose();
-    });
-  }, []);
+    ]).start();
+
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(translateY, {
+          toValue: 20,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        onClose();
+      });
+    }, duration);
+
+    return () => clearTimeout(timer);
+  }, [duration, onClose]);
 
   return (
     <Animated.View
@@ -41,6 +58,7 @@ export const Toast: React.FC<ToastProps> = ({
         styles.container,
         {
           opacity,
+          transform: [{ translateY }],
           backgroundColor: type === 'success' ? Theme.colors.success : Theme.colors.error,
         },
       ]}
@@ -53,7 +71,7 @@ export const Toast: React.FC<ToastProps> = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 50,
+    bottom: Platform.OS === 'ios' ? 100 : 50,
     left: 20,
     right: 20,
     padding: Theme.spacing.md,
@@ -61,6 +79,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   message: {
     color: 'white',

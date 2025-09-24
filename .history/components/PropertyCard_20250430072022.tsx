@@ -1,1 +1,0 @@
-"In @PropertyCard.tsx, please remove the property's rating display and arrange all elements in a vertical column layout."

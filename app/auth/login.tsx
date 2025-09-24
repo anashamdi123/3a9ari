@@ -4,28 +4,28 @@ import { useAuthContext } from '@/context/auth-context';
 import { Theme } from '@/constants/theme';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
-import { Toast } from '@/components/Toast';
+import { useToast } from '@/context/ToastContext';
 import { useRouter } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuthContext();
+  const { showToast } = useToast();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   
   const handleLogin = async () => {
     if (!email.trim()) {
-      setToast({ message: 'يرجى إدخال البريد الإلكتروني', type: 'error' });
+      showToast('يرجى إدخال البريد الإلكتروني', 'error');
       return;
     }
     
     if (!password.trim()) {
-      setToast({ message: 'يرجى إدخال كلمة المرور', type: 'error' });
+      showToast('يرجى إدخال كلمة المرور', 'error');
       return;
     }
     
@@ -38,12 +38,12 @@ export default function LoginScreen() {
         throw error;
       }
       
-      setToast({ message: 'تم تسجيل الدخول بنجاح', type: 'success' });
+      showToast('تم تسجيل الدخول بنجاح', 'success');
       setTimeout(() => {
         router.replace('/(tabs)');
       }, 1500);
     } catch (err: any) {
-      setToast({ message: err.message || 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى', type: 'error' });
+      showToast(err.message || 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -61,7 +61,7 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} scrollEventThrottle={16}>
           <View style={styles.formContainer}>
             <Text style={styles.welcomeText}>أهلاً بك في عقاري</Text>
             <Text style={styles.subtitleText}>قم بتسجيل الدخول للوصول إلى حسابك</Text>
@@ -111,6 +111,7 @@ export default function LoginScreen() {
               onPress={handleLogin}
               loading={isLoading}
               disabled={isLoading}
+              size="large"
               style={styles.loginButton}
             />
             
@@ -123,14 +124,6 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-      
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -190,7 +183,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontFamily: 'Tajawal-Regular',
-    backgroundColor: 'white',
+    backgroundColor: Theme.colors.background.card,
     borderWidth: 1,
     borderColor: Theme.colors.border,
     borderRadius: Theme.borderRadius.md,

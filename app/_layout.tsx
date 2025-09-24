@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { I18nManager, Platform } from 'react-native';
+import { I18nManager, Platform, View, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
@@ -11,6 +11,7 @@ import {
   Tajawal_700Bold
 } from '@expo-google-fonts/tajawal';
 import { AuthProvider } from '@/context/auth-context';
+import { ToastProvider } from '@/context/ToastContext';
 import { Theme } from '@/constants/theme';
 
 // Force RTL for Arabic language
@@ -24,7 +25,8 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useFrameworkReady();
-
+  const { width: windowWidth } = useWindowDimensions();
+  
   const [fontsLoaded, fontError] = useFonts({
     'Tajawal-Regular': Tajawal_400Regular,
     'Tajawal-Medium': Tajawal_500Medium,
@@ -43,32 +45,50 @@ export default function RootLayout() {
     return null;
   }
 
+  // Calculate container width based on screen size
+  const containerWidth = Math.min(windowWidth, 480); // Max width of 480px for mobile-like appearance
+
   return (
     <AuthProvider>
-      <Stack screenOptions={{ 
-        headerShown: false,
-        headerTitleAlign: 'center',
-        headerTitleStyle: {
-          fontFamily: 'Tajawal-Medium'
-        }
-      }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="property/[id]" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="auth/login" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="auth/register" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="+not-found" options={{ 
-          title: 'صفحة غير موجودة',
-          headerTitleAlign: 'center',
-          headerTitleStyle: {
-            fontFamily: 'Tajawal-Medium'
-          }
-        }} />
-      </Stack>
-      <StatusBar 
-        style="dark" 
-        backgroundColor={Theme.colors.background.main}
-        translucent={false}
-      />
+      <ToastProvider>
+        <View style={{ 
+          flex: 1, 
+          backgroundColor: Theme.colors.background.main,
+          alignItems: 'center', // Center horizontally
+        }}>
+          <View style={{
+            width: containerWidth,
+            flex: 1,
+            backgroundColor: Theme.colors.background.main,
+            
+          }}>
+            <Stack screenOptions={{ 
+              headerShown: false,
+              headerTitleAlign: 'center',
+              headerTitleStyle: {
+                fontFamily: 'Tajawal-Medium'
+              }
+            }}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="property/[id]" options={{ headerShown: false, presentation: 'modal' }} />
+              <Stack.Screen name="auth/login" options={{ headerShown: false, presentation: 'modal' }} />
+              <Stack.Screen name="auth/register" options={{ headerShown: false, presentation: 'modal' }} />
+              <Stack.Screen name="+not-found" options={{ 
+                title: 'صفحة غير موجودة',
+                headerTitleAlign: 'center',
+                headerTitleStyle: {
+                  fontFamily: 'Tajawal-Medium'
+                }
+              }} />
+            </Stack>
+            <StatusBar 
+              style="light" 
+              backgroundColor={Theme.colors.background.main}
+              translucent={false}
+            />
+          </View>
+        </View>
+      </ToastProvider>
     </AuthProvider>
   );
 }

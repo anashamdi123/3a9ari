@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Property } from '@/lib/supabase';
 
-interface UsePropertiesOptions {
+export interface UsePropertiesOptions {
   status?: string;
   ownerId?: string;
   limit?: number;
   page?: number;
+  category?: string;
+  city?: string;
+  delegation?: string;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -15,7 +18,7 @@ export function useProperties(options: UsePropertiesOptions = {}) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery,   setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,6 +58,22 @@ export function useProperties(options: UsePropertiesOptions = {}) {
         query = query.eq('owner_id', options.ownerId);
       }
       
+      if (options.category) {
+        query = query.eq('category', options.category);
+      }
+      
+      // Location filter logic
+      if (options.city && options.delegation) {
+        // Match exact format 'delegation, city'
+        query = query.ilike('location', `${options.delegation}, ${options.city}`);
+      } else if (options.city) {
+        // Match any location ending with ', city'
+        query = query.ilike('location', `%, ${options.city}`);
+      } else if (options.delegation) {
+        // Match any location starting with 'delegation,'
+        query = query.ilike('location', `${options.delegation},%`);
+      }
+      
       const { data, error: fetchError } = await query;
       
       if (fetchError) throw fetchError;
@@ -73,7 +92,7 @@ export function useProperties(options: UsePropertiesOptions = {}) {
   // Fetch properties on mount and when dependencies change
   useEffect(() => {
     fetchProperties(1, false);
-  }, [options.ownerId, options.status]);
+  }, [options.ownerId, options.status, options.category, options.city, options.delegation]);
 
   // Handle refresh
   const handleRefresh = async () => {

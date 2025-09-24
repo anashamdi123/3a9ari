@@ -1,37 +1,93 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Image, TextInput, Alert, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Image, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useAuthContext } from '@/context/auth-context';
 import { Theme } from '@/constants/theme';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
-import { Toast } from '@/components/Toast';
+import { useToast } from '@/context/ToastContext';
 import { supabase } from '@/lib/supabase';
-import { Plus, X, Camera, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { Plus, X, Camera, ChevronRight, ChevronLeft, RotateCcw, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { LOCATIONS, LocationType, PROPERTY_CATEGORIES, AREA_UNITS, PRICE_UNITS, AreaUnit, PriceUnit } from '@/constants/config';
+import { Alert as RNAlert } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
+
+async function uploadImageToSupabase(uri: string, userId: string): Promise<string | null> {
+  try {
+    // Read the file as base64
+    const fileInfo = await FileSystem.getInfoAsync(uri);
+    if (!fileInfo.exists) {
+      console.error('File does not exist:', uri);
+      return null;
+    }
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const fileExt = uri.split('.').pop() || 'jpg';
+    const fileName = uri.split('/').pop() || `image.${fileExt}`;
+    const filePath = `${userId}/${Date.now()}-${fileName}`;
+    // Decode base64 to ArrayBuffer
+    const arrayBuffer = decode(base64);
+    // Set correct content type
+    let contentType = `image/${fileExt}`;
+    if (fileExt === 'jpg') contentType = 'image/jpeg';
+    if (fileExt === 'png') contentType = 'image/png';
+    if (fileExt === 'jpeg') contentType = 'image/jpeg';
+    if (fileExt === 'webp') contentType = 'image/webp';
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('property-images')
+      .upload(filePath, arrayBuffer, {
+        contentType,
+        upsert: false,
+      });
+    if (uploadError) {
+      console.error('Upload error:', uploadError.message);
+      throw uploadError;
+    }
+    const { data: publicUrlData } = supabase.storage
+      .from('property-images')
+      .getPublicUrl(filePath);
+    return publicUrlData.publicUrl;
+  } catch (err: any) {
+    console.error('Upload error:', err.message);
+    return null;
+  }
+}
 
 export default function NewListingScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
+  const { showToast } = useToast();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // Form state
   const [images, setImages] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [size, setSize] = useState('');
-  const [location, setLocation] = useState('');
+  const [sizeUnit, setSizeUnit] = useState<AreaUnit>('m²');
+  const [selectedLocation, setSelectedLocation] = useState<LocationType | null>(null);
+  const [selectedDelegation, setSelectedDelegation] = useState<string | null>(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showDelegationModal, setShowDelegationModal] = useState(false);
   const [description, setDescription] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('+216 ');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showUnitModal, setShowUnitModal] = useState(false);
+  const [priceUnit, setPriceUnit] = useState<PriceUnit>('tnd');
+  const [showPriceUnitModal, setShowPriceUnitModal] = useState(false);
   
   const handlePickImage = async () => {
     if (images.length >= 5) {
-      Alert.alert(
+      RNAlert.alert(
         'تنبيه',
         'يمكنك إضافة 5 صور كحد أقصى',
-        [{ text: 'حسناً', style: 'default' }]
+        [
+          { text: 'حسناً', style: 'cancel' }
+        ]
       );
       return;
     }
@@ -47,12 +103,17 @@ export default function NewListingScreen() {
     if (!result.canceled && result.assets.length > 0) {
       const newImages = [...images, ...result.assets.map(asset => asset.uri)];
       if (newImages.length > 5) {
-        Alert.alert(
+        RNAlert.alert(
           'تنبيه',
           'تم تحديد 5 صور كحد أقصى. سيتم إضافة الصور حتى الوصول للحد الأقصى.',
-          [{ text: 'حسناً', style: 'default' }]
+          [
+            {
+              text: 'حسناً',
+              onPress: () => setImages(newImages.slice(0, 5)),
+              style: 'default',
+            },
+          ]
         );
-        setImages(newImages.slice(0, 5));
       } else {
         setImages(newImages);
       }
@@ -64,41 +125,85 @@ export default function NewListingScreen() {
   };
   
   const handlePhoneNumberChange = (text: string) => {
-    if (!text.startsWith('+216')) {
-      text = '+216' + text.replace(/[^\d]/g, '');
+    // Remove any non-digit characters
+    const digits = text.replace(/[^\d]/g, '');
+    
+    // Format the number with spaces
+    let formattedNumber = '';
+    if (digits.length > 0) {
+      formattedNumber = digits.slice(0, 2);
+      if (digits.length > 2) {
+        formattedNumber += ' ' + digits.slice(2, 5);
+      }
+      if (digits.length > 5) {
+        formattedNumber += ' ' + digits.slice(5, 8);
+      }
     }
     
-    const digits = text.replace(/[^\d]/g, '');
-    if (digits.length > 11) {
-      const formatted = `+216 ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 11)}`;
-      setPhoneNumber(formatted);
-    } else {
-      setPhoneNumber(text);
+    setPhoneNumber(formattedNumber);
+  };
+  
+  const validatePhoneNumber = (phone: string): boolean => {
+    // Remove all non-digit characters
+    const digits = phone.replace(/[^\d]/g, '');
+    
+    // Check if it's a valid Tunisian number
+    // Must have 8 digits total
+    if (digits.length !== 8) {
+      return false;
     }
+    
+    // Check if the operator code is valid (2, 4, 5, 7, 9)
+    const operatorCode = digits[0];
+    if (!['2', '4', '5', '7', '9'].includes(operatorCode)) {
+      return false;
+    }
+    
+    return true;
   };
   
   const handleNext = () => {
     if (step === 1 && images.length === 0) {
-      Alert.alert('خطأ', 'يرجى إضافة صورة واحدة على الأقل');
+      showToast('يرجى إضافة صورة واحدة على الأقل', 'error');
       return;
     }
-    
     if (step === 2) {
+      if (!selectedCategory) {
+        showToast('يرجى اختيار نوع العقار', 'error');
+        return;
+      }
       if (!title.trim()) {
-        Alert.alert('خطأ', 'يرجى إدخال عنوان العقار');
+        showToast('يرجى إدخال عنوان العقار', 'error');
         return;
       }
       if (!price.trim() || isNaN(Number(price))) {
-        Alert.alert('خطأ', 'يرجى إدخال سعر صحيح');
+        showToast('يرجى إدخال سعر صحيح', 'error');
         return;
       }
       if (!size.trim() || isNaN(Number(size))) {
-        Alert.alert('خطأ', 'يرجى إدخال مساحة صحيحة');
+        showToast('يرجى إدخال مساحة صحيحة', 'error');
         return;
       }
     }
-    
-    if (step < 3) {
+    if (step === 3) {
+      if (!selectedLocation || !selectedDelegation) {
+        showToast('يرجى اختيار الموقع', 'error');
+        return;
+      }
+      if (!description.trim()) {
+        showToast('يرجى إدخال وصف العقار', 'error');
+        return;
+      }
+      if (!phoneNumber.trim()) {
+        showToast('يرجى إدخال رقم الهاتف للتواصل', 'error');
+        return;
+      }
+      if (!validatePhoneNumber(phoneNumber)) {
+        showToast('يرجى إدخال رقم هاتف تونسي صحيح', 'error');
+        return;
+      }
+    }
+    if (step < 4) {
       setStep(step + 1);
     }
   };
@@ -110,32 +215,50 @@ export default function NewListingScreen() {
   };
   
   const handleSubmit = async () => {
-    if (!location.trim()) {
-      setToast({ message: 'يرجى إدخال الموقع', type: 'error' });
+    if (!selectedCategory) {
+      showToast('يرجى اختيار نوع العقار', 'error');
+      return;
+    }
+    if (!selectedLocation || !selectedDelegation) {
+      showToast('يرجى اختيار الموقع', 'error');
       return;
     }
     if (!description.trim()) {
-      setToast({ message: 'يرجى إدخال وصف العقار', type: 'error' });
+      showToast('يرجى إدخال وصف العقار', 'error');
       return;
     }
-    if (!phoneNumber.trim() || phoneNumber === '+216 ') {
-      setToast({ message: 'يرجى إدخال رقم الهاتف للتواصل', type: 'error' });
+    if (!phoneNumber.trim()) {
+      showToast('يرجى إدخال رقم الهاتف للتواصل', 'error');
       return;
     }
-    if (!phoneNumber.startsWith('+216') || phoneNumber.replace(/[^\d]/g, '').length !== 11) {
-      setToast({ message: 'يرجى إدخال رقم هاتف تونسي صحيح', type: 'error' });
+    if (!validatePhoneNumber(phoneNumber)) {
+      showToast('يرجى إدخال رقم هاتف تونسي صحيح', 'error');
       return;
     }
-    
     try {
       setIsSubmitting(true);
+
+      const uploadedImageUrls: string[] = [];
+      if (user?.id) {
+        for (const uri of images) {
+          const url = await uploadImageToSupabase(uri, user.id);
+          if (url) {
+            uploadedImageUrls.push(url);
+          } else {
+            console.warn(`Failed to upload image: ${uri}`);
+          }
+        }
+      }
+
+      if (uploadedImageUrls.length !== images.length) {
+        showToast('فشل تحميل بعض الصور. يرجى المحاولة مرة أخرى.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
       
-      // In a real implementation, we would upload images to Supabase Storage
-      // For this MVP, we'll just use the local URIs as placeholders
-      
-      const imageUrls = images;
-      
-      // Create the property listing
+      const delegationLabel = selectedLocation.delegations.find(d => d.id === selectedDelegation)?.label;
+      const location = `${delegationLabel}, ${selectedLocation.label}`;
+      const fullPhoneNumber = `+216 ${phoneNumber}`;
       const { data, error } = await supabase
         .from('properties')
         .insert([
@@ -143,38 +266,70 @@ export default function NewListingScreen() {
             owner_id: user!.id,
             title,
             price: Number(price),
+            price_unit: priceUnit,
             size: Number(size),
+            size_unit: sizeUnit,
             location,
             description,
-            phone_number: phoneNumber,
-            images: imageUrls,
+            phone_number: fullPhoneNumber,
+            images: uploadedImageUrls,
             status: 'pending',
+            category: selectedCategory,
           },
         ])
         .select();
-      
       if (error) throw error;
-      
-      setToast({ message: 'تم إضافة العقار بنجاح وهو الآن قيد المراجعة', type: 'success' });
-      
+      showToast('تم إضافة العقار بنجاح وهو الآن قيد المراجعة', 'success');
       // Reset form after successful submission
       setImages([]);
       setTitle('');
       setPrice('');
       setSize('');
-      setLocation('');
+      setSizeUnit('m²');
+      setSelectedLocation(null);
+      setSelectedDelegation(null);
       setDescription('');
-      setPhoneNumber('+216 ');
+      setPhoneNumber('');
+      setSelectedCategory(null);
       setStep(1);
-      
+      setPriceUnit('tnd');
       setTimeout(() => {
         router.replace('/(tabs)');
       }, 1500);
     } catch (error: any) {
-      setToast({ message: error.message || 'حدث خطأ أثناء إضافة العقار', type: 'error' });
+      showToast(error.message || 'حدث خطأ أثناء إضافة العقار', 'error');
     } finally {
       setIsSubmitting(false);
     }
+  };
+  
+  const handleReset = () => {
+    RNAlert.alert(
+      'إعادة تعيين',
+      'هل أنت متأكد من إعادة تعيين النموذج؟',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'تأكيد',
+          style: 'destructive',
+          onPress: () => {
+        setImages([]);
+        setTitle('');
+        setPrice('');
+        setSize('');
+        setSizeUnit('m²');
+        setSelectedLocation(null);
+        setSelectedDelegation(null);
+        setDescription('');
+        setPhoneNumber('');
+        setSelectedCategory(null);
+        setStep(1);
+        setPriceUnit('tnd');
+        showToast('تم إعادة تعيين النموذج', 'success');
+          },
+        },
+      ]
+    );
   };
   
   if (!isAuthenticated) {
@@ -199,7 +354,18 @@ export default function NewListingScreen() {
   
   return (
     <SafeAreaView style={styles.container}>
-      <Header title={`إضافة عقار - الخطوة ${step}/3`} />
+      <Header 
+        title={`إضافة عقار - الخطوة ${step}/4`} 
+        rightComponent={
+          <TouchableOpacity 
+            style={styles.resetButton} 
+            onPress={handleReset}
+          >
+            <RotateCcw size={24} color={Theme.colors.primary} />
+          </TouchableOpacity>
+        }
+      />
+      <View style={styles.contentContainer}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
@@ -207,6 +373,7 @@ export default function NewListingScreen() {
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
         >
           {step === 1 && (
             <View style={styles.stepContainer}>
@@ -217,7 +384,6 @@ export default function NewListingScreen() {
               <Text style={styles.imageLimitText}>
                 {images.length}/5 صور
               </Text>
-              
               <View style={styles.imagesContainer}>
                 <View style={styles.addImageButton}>
                   <Button
@@ -226,28 +392,50 @@ export default function NewListingScreen() {
                     icon={<Plus size={20} color="white" style={{ marginLeft: 8 }} />}
                   />
                 </View>
-                
-                {images.map((image, index) => (
-                  <View key={index} style={styles.imageContainer}>
-                    <Image source={{ uri: image }} style={styles.image} />
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => handleRemoveImage(index)}
-                    >
-                      <X size={16} color="white" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
               </View>
+              {/* Thumbnails row under the add button */}
+              {images.length > 0 && (
+                <View style={styles.thumbnailsFlexContainer}>
+                  {images.map((image, index) => (
+                    <View key={index} style={styles.thumbnailContainer}>
+                      <Image source={{ uri: image }} style={styles.thumbnail} />
+                      <TouchableOpacity
+                        style={styles.removeButton}
+                        onPress={() => handleRemoveImage(index)}
+                      >
+                        <X size={16} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
           
           {step === 2 && (
             <View style={styles.stepContainer}>
               <Text style={styles.stepTitle}>معلومات العقار الأساسية</Text>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>نوع العقار</Text>
+                  <TouchableOpacity
+                    style={styles.locationSelect}
+                    onPress={() => setShowCategoryModal(true)}
+                  >
+                    <Text style={[
+                      styles.locationSelectText,
+                      !selectedCategory && styles.placeholderText
+                    ]}>
+                      {selectedCategory 
+                        ? PROPERTY_CATEGORIES.find(c => c.id === selectedCategory)?.label 
+                        : 'اختر نوع العقار'}
+                    </Text>
+                    <ChevronDown size={20} color={Theme.colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
               
               <View style={styles.formGroup}>
-                <Text style={styles.label}>عنوان العقار</Text>
+                <Text style={styles.label}>إسم العقار</Text>
                 <TextInput
                   style={styles.input}
                   value={title}
@@ -258,27 +446,49 @@ export default function NewListingScreen() {
               </View>
               
               <View style={styles.formGroup}>
-                <Text style={styles.label}>السعر (دت)</Text>
+                <Text style={styles.label}>السعر</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.locationSelect, { flex: 1, marginRight: 10, marginLeft: 0, maxWidth: 125 }]}
+                    onPress={() => setShowPriceUnitModal(true)}
+                  >
+                    <Text style={[styles.locationSelectText, !priceUnit && styles.placeholderText]}>
+                      {PRICE_UNITS.find(unit => unit.id === priceUnit)?.label || 'اختر وحدة السعر'}
+                    </Text>
+                    <ChevronDown size={20} color={Theme.colors.text.primary} />
+                  </TouchableOpacity>
                 <TextInput
-                  style={styles.input}
+                    style={[styles.input, { flex: 3 }]}
                   value={price}
                   onChangeText={setPrice}
-                  placeholder="أدخل السعر"
+                    placeholder={`أدخل السعر بـ${PRICE_UNITS.find(unit => unit.id === priceUnit)?.label || ''}`}
                   placeholderTextColor={Theme.colors.text.light}
                   keyboardType="numeric"
                 />
+                </View>
               </View>
               
               <View style={styles.formGroup}>
-                <Text style={styles.label}>المساحة (متر مربع)</Text>
+                <Text style={styles.label}>المساحة</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.locationSelect, { flex: 1, marginRight: 10, marginLeft: 0, maxWidth: 110 }]}
+                    onPress={() => setShowUnitModal(true)}
+                  >
+                    <Text style={[styles.locationSelectText, !sizeUnit && styles.placeholderText]}>
+                      {AREA_UNITS.find(unit => unit.id === sizeUnit)?.label || 'اختر وحدة المساحة'}
+                    </Text>
+                    <ChevronDown size={20} color={Theme.colors.text.primary} />
+                  </TouchableOpacity>
                 <TextInput
-                  style={styles.input}
+                    style={[styles.input, { flex: 3 }]}
                   value={size}
                   onChangeText={setSize}
-                  placeholder="أدخل المساحة"
+                    placeholder={`أدخل المساحة بـ${AREA_UNITS.find(unit => unit.id === sizeUnit)?.label || ''}`}
                   placeholderTextColor={Theme.colors.text.light}
                   keyboardType="numeric"
                 />
+                </View>
               </View>
             </View>
           )}
@@ -289,27 +499,58 @@ export default function NewListingScreen() {
               
               <View style={styles.formGroup}>
                 <Text style={styles.label}>الموقع</Text>
-                <TextInput
-                  style={styles.input}
-                  value={location}
-                  onChangeText={setLocation}
-                  placeholder="مثال: وادي الليل ، منوبة"
-                  placeholderTextColor={Theme.colors.text.light}
-                />
+                <View style={styles.locationContainer}>
+                  <TouchableOpacity
+                    style={styles.locationSelect}
+                      onPress={() => setShowLocationModal(true)}
+                  >
+                    <Text style={[
+                      styles.locationSelectText,
+                        !selectedLocation && styles.placeholderText
+                    ]}>
+                        {selectedLocation ? selectedLocation.label : 'اختر المدينة'}
+                    </Text>
+                    <ChevronDown size={20} color={Theme.colors.text.primary} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.locationSelect,
+                        !selectedLocation && styles.disabledSelect
+                    ]}
+                      onPress={() => selectedLocation && setShowDelegationModal(true)}
+                      disabled={!selectedLocation}
+                  >
+                    <Text style={[
+                      styles.locationSelectText,
+                      !selectedDelegation && styles.placeholderText
+                    ]}>
+                      {selectedDelegation 
+                          ? selectedLocation?.delegations.find(d => d.id === selectedDelegation)?.label 
+                        : 'اختر المعتمدية'}
+                    </Text>
+                    <ChevronDown size={20} color={Theme.colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
               
               <View style={styles.formGroup}>
                 <Text style={styles.label}>رقم الهاتف</Text>
+                  <View style={styles.phoneInputContainer}>
+                    <View style={styles.phonePrefix}>
+                      <Text style={styles.phonePrefixText}>+216</Text>
+                    </View>
                 <TextInput
-                  style={styles.input}
+                      style={[styles.input, styles.phoneInput]}
                   value={phoneNumber}
                   onChangeText={handlePhoneNumberChange}
-                  placeholder="+216 XX XXX XXX"
+                      placeholder="XX XXX XXX"
                   placeholderTextColor={Theme.colors.text.light}
                   keyboardType="phone-pad"
-                  maxLength={16}
+                      maxLength={10}
                 />
-                <Text style={styles.helperText}>مثال: +216 XX XXX XXX</Text>
+                  </View>
+                  
               </View>
               
               <View style={styles.formGroup}>
@@ -327,45 +568,252 @@ export default function NewListingScreen() {
               </View>
             </View>
           )}
+          {step === 4 && (
+            <View style={styles.stepContainer}>
+              <Text style={styles.stepTitle}>مراجعة البيانات</Text>
+              <Text style={styles.stepDescription}>يرجى مراجعة جميع المعلومات قبل الإرسال</Text>
+              {/* Images Preview */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 }}>
+                {images.map((img, idx) => (
+                  <Image key={idx} source={{ uri: img }} style={{ width: 60, height: 60, borderRadius: 8, marginRight: 8, marginBottom: 8 }} />
+                ))}
+              </View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>العنوان:</Text><Text style={styles.reviewValue}>{title}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>نوع العقار:</Text><Text style={styles.reviewValue}>{selectedCategory ? PROPERTY_CATEGORIES.find(c => c.id === selectedCategory)?.label : ''}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>السعر:</Text><Text style={styles.reviewValue}>{price} {PRICE_UNITS.find(u => u.id === priceUnit)?.label}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>المساحة:</Text><Text style={styles.reviewValue}>{size} {AREA_UNITS.find(u => u.id === sizeUnit)?.label}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>الموقع:</Text><Text style={styles.reviewValue}>{selectedDelegation && selectedLocation ? `${selectedLocation.delegations.find(d => d.id === selectedDelegation)?.label}, ${selectedLocation.label}` : ''}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>رقم الهاتف:</Text><Text style={styles.reviewValue}>+216 {phoneNumber}</Text></View>
+              <View style={styles.reviewRow}><Text style={styles.reviewLabel}>الوصف:</Text><Text style={styles.reviewValue}>{description}</Text></View>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
       
-      <View style={styles.footer}>
-        {step > 1 && (
-          <Button
-            title="السابق"
-            onPress={handleBack}
-            type="outline"
-            style={styles.backButton}
-            icon={<ChevronRight size={20} color={Theme.colors.primary} style={{ marginLeft: 8 }} />}
-          />
-        )}
-        
-        {step < 3 ? (
-          <Button
-            title="التالي"
-            onPress={handleNext}
-            style={styles.nextButton}
-            icon={<ChevronLeft size={20} color="white" style={{ marginRight: 8 }} />}
-          />
-        ) : (
-          <Button
-            title={isSubmitting ? 'جاري الإرسال...' : 'إرسال'}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-            loading={isSubmitting}
-            style={styles.submitButton}
-          />
-        )}
+        <View style={styles.footer}>
+          {step > 1 && (
+            <Button
+              title="السابق"
+              onPress={handleBack}
+              type="outline"
+              style={[styles.navButton, styles.backButton]}
+              textStyle={{ color: Theme.colors.primary }}
+            />
+          )}
+          
+          {step < 4 ? (
+            <Button
+              title="التالي"
+              onPress={handleNext}
+              style={[styles.navButton, styles.nextButton]}
+            />
+          ) : (
+            <Button
+              title={isSubmitting ? 'جاري الإرسال...' : 'إرسال'}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              loading={isSubmitting}
+              style={[styles.navButton, styles.submitButton]}
+            />
+          )}
+        </View>
       </View>
       
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+      {/* Location Selection Modal */}
+      <Modal
+        visible={showLocationModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsSubmitting(false);
+          setShowLocationModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>اختر المدينة</Text>
+              <TouchableOpacity
+                onPress={() => setShowLocationModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              {LOCATIONS.map((location) => (
+                <TouchableOpacity
+                  key={location.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedLocation(location);
+                    setSelectedDelegation(null);
+                    setShowLocationModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{location.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delegation Selection Modal */}
+      <Modal
+        visible={showDelegationModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsSubmitting(false);
+          setShowDelegationModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>اختر المعتمدية</Text>
+              <TouchableOpacity
+                onPress={() => setShowDelegationModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              {selectedLocation?.delegations.map((delegation) => (
+                <TouchableOpacity
+                  key={delegation.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedDelegation(delegation.id);
+                    setShowDelegationModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{delegation.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Category Selection Modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsSubmitting(false);
+          setShowCategoryModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>اختر نوع العقار</Text>
+              <TouchableOpacity
+                onPress={() => setShowCategoryModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              {PROPERTY_CATEGORIES.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedCategory(category.id);
+                    setShowCategoryModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{category.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+      </View>
+      </Modal>
+
+      {/* Unit Selection Modal */}
+      <Modal
+        visible={showUnitModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsSubmitting(false);
+          setShowUnitModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>اختر وحدة المساحة</Text>
+              <TouchableOpacity
+                onPress={() => setShowUnitModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              {AREA_UNITS.map((unit) => (
+                <TouchableOpacity
+                  key={unit.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSizeUnit(unit.id as AreaUnit);
+                    setShowUnitModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{unit.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Price Unit Selection Modal */}
+      <Modal
+        visible={showPriceUnitModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsSubmitting(false);
+          setShowPriceUnitModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>اختر وحدة السعر</Text>
+              <TouchableOpacity
+                onPress={() => setShowPriceUnitModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              {PRICE_UNITS.map((unit) => (
+                <TouchableOpacity
+                  key={unit.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setPriceUnit(unit.id as PriceUnit);
+                    setShowPriceUnitModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{unit.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+      </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -375,12 +823,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background.light,
   },
+  contentContainer: {
+    flex: 1,
+  },
   keyboardAvoidingView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     padding: Theme.spacing.lg,
   },
   centerContainer: {
@@ -409,6 +859,7 @@ const styles = StyleSheet.create({
   },
   stepContainer: {
     marginBottom: Theme.spacing.xl,
+    width: '100%',
   },
   stepTitle: {
     fontFamily: 'Tajawal-Bold',
@@ -450,7 +901,7 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-    resizeMode: 'contain',
+    resizeMode: 'cover',
   },
   removeButton: {
     position: 'absolute',
@@ -465,6 +916,7 @@ const styles = StyleSheet.create({
   },
   formGroup: {
     marginBottom: Theme.spacing.lg,
+    width: '100%',
   },
   label: {
     fontFamily: 'Tajawal-Medium',
@@ -475,7 +927,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontFamily: 'Tajawal-Regular',
-    backgroundColor: 'white',
+    backgroundColor: Theme.colors.background.card,
     borderWidth: 1,
     borderColor: Theme.colors.border,
     borderRadius: Theme.borderRadius.md,
@@ -483,6 +935,8 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSizes.md,
     color: Theme.colors.text.primary,
     textAlign: 'right',
+    width: '100%',
+    minWidth: 0,
   },
   textArea: {
     minHeight: 120,
@@ -490,28 +944,196 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     padding: Theme.spacing.lg,
-    backgroundColor: 'white',
+    backgroundColor: Theme.colors.background.main,
     borderTopWidth: 1,
     borderTopColor: Theme.colors.border,
+    ...Theme.shadows.medium,
+    gap: Theme.spacing.xl,
+  },
+  navButton: {
+    width: 140,
+    height: 48,
+    borderRadius: Theme.borderRadius.md,
   },
   backButton: {
-    flex: 1,
-    marginLeft: Theme.spacing.sm,
+    backgroundColor: Theme.colors.background.card,
+    borderColor: Theme.colors.primary,
   },
   nextButton: {
-    flex: 1,
-    marginRight: Theme.spacing.sm,
+    backgroundColor: Theme.colors.primary,
   },
   submitButton: {
-    flex: 1,
+    backgroundColor: Theme.colors.primary,
   },
   helperText: {
     fontFamily: 'Tajawal-Regular',
     fontSize: Theme.fontSizes.sm,
     color: Theme.colors.text.secondary,
     marginTop: Theme.spacing.xs,
+    textAlign: 'right',
+  },
+  resetButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationContainer: {
+    gap: Theme.spacing.sm,
+  },
+  locationSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Theme.colors.background.card,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+  },
+  locationSelectText: {
+    fontFamily: 'Tajawal-Regular',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+    textAlign: 'right',
+  },
+  placeholderText: {
+    color: Theme.colors.text.light,
+  },
+  disabledSelect: {
+    opacity: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: Theme.colors.background.main,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 480,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Theme.colors.text.primary,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  modalScroll: {
+    maxHeight: '80%',
+  },
+  modalItem: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.border,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: Theme.colors.text.primary,
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.card,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    overflow: 'hidden',
+  },
+  phoneInput: {
+    flex: 1,
+    borderWidth: 0,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    textAlign: 'right',
+  },
+  phonePrefix: {
+    backgroundColor: Theme.colors.background.light,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.md,
+    borderRightWidth: 1,
+    borderRightColor: Theme.colors.border,
+  },
+  phonePrefixText: {
+    fontFamily: 'Tajawal-Medium',
+    fontSize: Theme.fontSizes.md,
+    color: Theme.colors.text.primary,
+  },
+  unitToggle: {
+    flex: 1,
+    paddingVertical: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.lg,
+    backgroundColor: Theme.colors.background.card,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  unitToggleActive: {
+    backgroundColor: Theme.colors.primary,
+    borderColor: Theme.colors.primary,
+  },
+  unitToggleText: {
+    fontFamily: 'Tajawal-Medium',
+    color: Theme.colors.text.primary,
+  },
+  unitToggleTextActive: {
+    color: 'white',
+  },
+  thumbnailsFlexContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Theme.spacing.xs,
+    marginTop: 12,
+  },
+  thumbnailContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: Theme.borderRadius.md,
+    margin: Theme.spacing.xs / 2,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  thumbnail: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+    gap: 8,
+  },
+  reviewLabel: {
+    fontFamily: 'Tajawal-Bold',
+    color: Theme.colors.text.primary,
+    fontSize: Theme.fontSizes.md,
+    minWidth: 90,
+    textAlign: 'right',
+  },
+  reviewValue: {
+    fontFamily: 'Tajawal-Regular',
+    color: Theme.colors.text.secondary,
+    fontSize: Theme.fontSizes.md,
+    flex: 1,
     textAlign: 'right',
   },
 });
