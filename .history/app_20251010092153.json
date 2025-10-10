@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "3a9ari",
-    "slug": "akari",
+    "slug": "3a9ari",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "assets/images/icon.png",
@@ -42,9 +42,8 @@
         "origin": false
       },
       "eas": {
-        "projectId": "471c262f-fb9c-49dc-8f9e-bf34c0e559a8"
+        "projectId": "d6c481f0-cb7e-4e12-9b79-f668395b4b87"
       }
-    },
-    "owner": "amineherchi"
+    }
   }
 }
