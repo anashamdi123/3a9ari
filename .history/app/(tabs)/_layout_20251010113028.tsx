@@ -19,6 +19,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: Theme.colors.primary,
         tabBarInactiveTintColor: Theme.colors.text.secondary,
         tabBarShowLabel: true,
+        tabBarAllowFontScaling: false,
         tabBarLabelPosition: 'below-icon',
         tabBarStyle: styles.tabBar,
         tabBarHideOnKeyboard: true,
@@ -123,9 +124,12 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontFamily: 'Tajawal-Medium',
     fontSize: 12,
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
     textAlign: 'center',
-    marginTop: 2,
-    includeFontPadding: false,
+    width: '100%',
   },
   header: {
     backgroundColor: Theme.colors.background.main,
@@ -142,6 +146,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabBarIcon: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -150,6 +159,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 24,
     width: '100%',
+    marginBottom: 15,
   },
   addButton: {
     width: 48,

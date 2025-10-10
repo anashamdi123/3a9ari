@@ -45,14 +45,14 @@ export default function FavoritesScreen() {
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="المفضلة" />
+        {/* <Header title="المفضلة" /> */}
         <View style={styles.centerContainer}>
           <Heart size={64} color={Theme.colors.primary} />
           <Text style={styles.title}>المفضلة</Text>
           <Text style={styles.message}>
             قم بتسجيل الدخول لحفظ العقارات المفضلة لديك ومتابعتها
           </Text>
-          <Button 
+          <Button
             title="تسجيل الدخول"
             onPress={handleLogin}
             style={styles.loginButton}
@@ -67,6 +67,11 @@ export default function FavoritesScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Header title="المفضلة" />
+        <View style={styles.searchContainer}>
+          <View style={styles.placeholderContainer}>
+            <Text style={styles.placeholderText}>المفضلة</Text>
+          </View>
+        </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={Theme.colors.primary} />
         </View>

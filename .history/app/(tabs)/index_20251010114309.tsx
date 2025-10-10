@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   StyleSheet, 
@@ -14,6 +14,7 @@ import {
   ScrollView
 } from 'react-native';
 import { PropertyCard } from '@/components/PropertyCard';
+import { SearchBar } from '@/components/SearchBar';
 import { useProperties } from '@/hooks/useProperties';
 import { Header } from '@/components/Header';
 import { Theme } from '@/constants/theme';
@@ -46,6 +47,17 @@ export default function HomeScreen() {
   } = useProperties({ status: 'approved', ...filters });
 
   const numColumns = 1;
+
+  // Ref to control the list (scroll to top on filter changes)
+  const listRef = useRef<FlatList>(null);
+
+  // Auto-refresh and re-render when filters change
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    handleRefresh();
+    setReloadKey(k => k + 1);
+  }, [filters, filtersLoaded, handleRefresh]);
 
   // Load filters from AsyncStorage on mount
   React.useEffect(() => {
@@ -181,6 +193,7 @@ export default function HomeScreen() {
       <Header showLogo showBackButton={false} onLogoPress={() => setReloadKey(k => k + 1)} />
       
       <FlatList
+        ref={listRef}
         data={properties}
         keyExtractor={keyExtractor}
         ListHeaderComponent={
@@ -254,7 +267,7 @@ export default function HomeScreen() {
                     {selectedDelegation && selectedCity && (
                       <View style={styles.activeFilterButton}>
                         <Text style={styles.activeFilterText}>
-                          المعتمدية: {selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label}
+                          المعتمدية: {selectedCity.delegations.find(d => d.id === selectedDelegation)?.label}
                         </Text>
                       </View>
                     )}
@@ -302,8 +315,8 @@ export default function HomeScreen() {
                         styles.locationSelectText,
                         !selectedDelegation && styles.placeholderText
                       ]}>
-                    {selectedDelegation
-                          ? selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label
+                        {selectedDelegation
+                          ? selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label
                           : 'اختر المعتمدية'}
                       </Text>
                       <ChevronDown size={20} color={Theme.colors.text.primary} />
@@ -315,7 +328,7 @@ export default function HomeScreen() {
                       setFilters({
                         category: selectedCategory ? String(selectedCategory) : undefined,
                         city: selectedCity?.label ? String(selectedCity.label) : undefined,
-                      delegation: selectedDelegation && selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label) : undefined,
+                        delegation: selectedDelegation && selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => d.id === selectedDelegation)?.label) : undefined,
                       });
                       setShowAdvancedSearch(false);
                     }}
@@ -405,7 +418,7 @@ export default function HomeScreen() {
                               key={delegation.id}
                               style={styles.modalItem}
                               onPress={() => {
-                                setSelectedDelegation(String(delegation.id));
+                                setSelectedDelegation(delegation.id);
                                 setShowDelegationModal(false);
                               }}
                             >

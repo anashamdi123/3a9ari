@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ interface PropertyCardProps {
   onFavoriteToggle?: (propertyId: string) => void;
 }
 
-function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps) {
+export function PropertyCard({ property, onFavoriteToggle }: PropertyCardProps) {
   const router = useRouter();
   const { isAuthenticated, user } = useAuthContext();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -45,23 +45,31 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
   const isFav = isFavorite(property.id);
   const isOwner = user?.id === property.owner_id;
 
-  const priceUnitLabel = property.price_unit
-    ? PRICE_UNITS.find(unit => unit.id === property.price_unit)?.label
-    : PRICE_UNITS[0].label;
+  const priceUnitLabel = useMemo(() => (
+    property.price_unit
+      ? PRICE_UNITS.find(unit => unit.id === property.price_unit)?.label
+      : PRICE_UNITS[0].label
+  ), [property.price_unit]);
 
-  const areaUnitLabel = property.size_unit
-    ? AREA_UNITS.find(unit => unit.id === property.size_unit)?.label
-    : AREA_UNITS[0].label;
+  const areaUnitLabel = useMemo(() => (
+    property.size_unit
+      ? AREA_UNITS.find(unit => unit.id === property.size_unit)?.label
+      : AREA_UNITS[0].label
+  ), [property.size_unit]);
 
-  const categoryLabel = property.category
-    ? PROPERTY_CATEGORIES.find(cat => cat.id === property.category)?.label
-    : 'غير محدد';
+  const categoryLabel = useMemo(() => (
+    property.category
+      ? PROPERTY_CATEGORIES.find(cat => cat.id === property.category)?.label
+      : 'غير محدد'
+  ), [property.category]);
 
   return (
     <TouchableOpacity
       style={styles.container}
       onPress={handlePress}
       activeOpacity={0.9}
+      accessibilityRole="button"
+      accessibilityLabel={`فتح ${property.title || 'عقار'}`}
     >
       {/* Image Section */}
       <View style={styles.imageContainer}>
@@ -73,9 +81,6 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
           }
           style={styles.image}
           contentFit="cover"
-          cachePolicy="disk"
-          recyclingKey={property.id}
-          priority="low"
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
           transition={100}
@@ -90,7 +95,7 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
 
         {/* Category Badge */}
         <View style={styles.categoryBadge}>
-          <Text style={styles.categoryText}>{categoryLabel}</Text>
+          <Text style={styles.categoryText} numberOfLines={1}>{categoryLabel}</Text>
         </View>
 
         {/* Favorite Button */}
@@ -99,6 +104,8 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
             style={styles.favoriteButton}
             onPress={handleFavoritePress}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={isFav ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}
           >
             <Heart
               size={24}
@@ -117,7 +124,7 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
           </Text>
         </View>
 
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={styles.title} numberOfLines={2}>
           {property.title || 'Untitled Property'}
         </Text>
 
@@ -140,25 +147,6 @@ function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps
     </TouchableOpacity>
   );
 }
-
-const areEqual = (prev: PropertyCardProps, next: PropertyCardProps) => {
-  const p = prev.property;
-  const n = next.property;
-  if (p.id !== n.id) return false;
-  if (p.title !== n.title) return false;
-  if (p.location !== n.location) return false;
-  if (p.price !== n.price) return false;
-  if (p.price_unit !== n.price_unit) return false;
-  if (p.size !== n.size) return false;
-  if (p.size_unit !== n.size_unit) return false;
-  if (p.category !== n.category) return false;
-  const pImg = Array.isArray(p.images) && p.images.length ? p.images[0] : undefined;
-  const nImg = Array.isArray(n.images) && n.images.length ? n.images[0] : undefined;
-  if (pImg !== nImg) return false;
-  return prev.onFavoriteToggle === next.onFavoriteToggle;
-};
-
-export const PropertyCard = memo(PropertyCardComponent, areEqual);
 
 // styles (unchanged — same as your code)
 const styles = StyleSheet.create({

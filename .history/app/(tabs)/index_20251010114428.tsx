@@ -14,6 +14,7 @@ import {
   ScrollView
 } from 'react-native';
 import { PropertyCard } from '@/components/PropertyCard';
+import { SearchBar } from '@/components/SearchBar';
 import { useProperties } from '@/hooks/useProperties';
 import { Header } from '@/components/Header';
 import { Theme } from '@/constants/theme';
@@ -254,7 +255,7 @@ export default function HomeScreen() {
                     {selectedDelegation && selectedCity && (
                       <View style={styles.activeFilterButton}>
                         <Text style={styles.activeFilterText}>
-                          المعتمدية: {selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label}
+                          المعتمدية: {selectedCity.delegations.find(d => d.id === selectedDelegation)?.label}
                         </Text>
                       </View>
                     )}
@@ -302,8 +303,8 @@ export default function HomeScreen() {
                         styles.locationSelectText,
                         !selectedDelegation && styles.placeholderText
                       ]}>
-                    {selectedDelegation
-                          ? selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label
+                        {selectedDelegation
+                          ? selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label
                           : 'اختر المعتمدية'}
                       </Text>
                       <ChevronDown size={20} color={Theme.colors.text.primary} />
@@ -315,7 +316,7 @@ export default function HomeScreen() {
                       setFilters({
                         category: selectedCategory ? String(selectedCategory) : undefined,
                         city: selectedCity?.label ? String(selectedCity.label) : undefined,
-                      delegation: selectedDelegation && selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label) : undefined,
+                        delegation: selectedDelegation && selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => d.id === selectedDelegation)?.label) : undefined,
                       });
                       setShowAdvancedSearch(false);
                     }}
@@ -405,7 +406,7 @@ export default function HomeScreen() {
                               key={delegation.id}
                               style={styles.modalItem}
                               onPress={() => {
-                                setSelectedDelegation(String(delegation.id));
+                                setSelectedDelegation(delegation.id);
                                 setShowDelegationModal(false);
                               }}
                             >

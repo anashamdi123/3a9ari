@@ -18,11 +18,10 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Theme.colors.primary,
         tabBarInactiveTintColor: Theme.colors.text.secondary,
-        tabBarShowLabel: true,
-        tabBarLabelPosition: 'below-icon',
         tabBarStyle: styles.tabBar,
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabBarLabel,
+        tabBarAllowFontScaling: true,
         headerStyle: styles.header,
         headerTintColor: Theme.colors.text.primary,
         tabBarItemStyle: styles.tabBarItem,
@@ -32,7 +31,6 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'الرئيسية',
-          tabBarLabel: 'الرئيسية',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -45,7 +43,6 @@ export default function TabLayout() {
         name="favorites"
         options={{
           title: 'المفضلة',
-          tabBarLabel: 'المفضلة',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -66,7 +63,6 @@ export default function TabLayout() {
         name="new-listing"
         options={{
           title: 'إضافة عقار',
-          tabBarLabel: '',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -89,7 +85,6 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'حسابي',
-          tabBarLabel: 'حسابي',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -115,17 +110,20 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Theme.colors.border,
     backgroundColor: Theme.colors.background.main,
-    height: 70,
+    height: 72,
     elevation: 0,
     shadowOpacity: 0,
     paddingBottom: 8,
   },
   tabBarLabel: {
     fontFamily: 'Tajawal-Medium',
-    fontSize: 12,
+    fontSize: 13,
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
     textAlign: 'center',
-    marginTop: 2,
-    includeFontPadding: false,
+    width: '100%',
   },
   header: {
     backgroundColor: Theme.colors.background.main,
@@ -135,13 +133,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   tabBarItem: {
-    height: 60,
-    paddingVertical: 8,
+    height: 62,
+    paddingVertical: 10,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabBarIcon: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -150,6 +153,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 24,
     width: '100%',
+    marginBottom: 15,
   },
   addButton: {
     width: 48,

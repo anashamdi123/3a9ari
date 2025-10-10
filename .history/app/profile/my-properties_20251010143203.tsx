@@ -159,7 +159,12 @@ export default function MyListingsScreen() {
   if (isLoading && listings.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="عقاراتي" />
+        {/* <Header title="عقاراتي" /> */}
+        <View style={styles.searchContainer}>
+          <View style={styles.placeholderContainer}>
+            <Text style={styles.placeholderText}>عقاراتي</Text>
+          </View>
+        </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={Theme.colors.primary} />
         </View>
