@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   StyleSheet, 
@@ -14,7 +14,6 @@ import {
   ScrollView
 } from 'react-native';
 import { PropertyCard } from '@/components/PropertyCard';
-import { SearchBar } from '@/components/SearchBar';
 import { useProperties } from '@/hooks/useProperties';
 import { Header } from '@/components/Header';
 import { Theme } from '@/constants/theme';
@@ -71,22 +70,33 @@ export default function HomeScreen() {
     }
   }, [filters, filtersLoaded]);
 
-  const renderFooter = () => {
+  const renderFooter = useCallback(() => {
     if (!hasMore) return null;
     return (
       <View style={styles.footer}>
         <ActivityIndicator size="small" color={Theme.colors.primary} />
       </View>
     );
-  };
+  }, [hasMore]);
 
-  const renderEmpty = () => (
+  const renderEmpty = useCallback(() => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>
         {'لا توجد عقارات متاحة'}
       </Text>
     </View>
+  ), []);
+
+  const keyExtractor = useCallback((item: any) => item.id, []);
+
+  const getItemLayout = useCallback<NonNullable<React.ComponentProps<typeof FlatList>['getItemLayout']>>(
+    (_data, index) => ({ length: 320, offset: 320 * index, index }),
+    []
   );
+
+  const initialNumToRender = 6;
+  const maxToRenderPerBatch = 8;
+  const windowSize = 7;
   if (!filtersLoaded) {
     return (
       <SafeAreaView style={styles.container} key={reloadKey}>
@@ -172,7 +182,7 @@ export default function HomeScreen() {
       
       <FlatList
         data={properties}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         ListHeaderComponent={
           <View style={styles.searchContainer}>
             <TouchableOpacity
@@ -244,7 +254,7 @@ export default function HomeScreen() {
                     {selectedDelegation && selectedCity && (
                       <View style={styles.activeFilterButton}>
                         <Text style={styles.activeFilterText}>
-                          المعتمدية: {selectedCity.delegations.find(d => d.id === selectedDelegation)?.label}
+                          المعتمدية: {selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label}
                         </Text>
                       </View>
                     )}
@@ -292,8 +302,8 @@ export default function HomeScreen() {
                         styles.locationSelectText,
                         !selectedDelegation && styles.placeholderText
                       ]}>
-                        {selectedDelegation
-                          ? selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label
+                    {selectedDelegation
+                          ? selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label
                           : 'اختر المعتمدية'}
                       </Text>
                       <ChevronDown size={20} color={Theme.colors.text.primary} />
@@ -305,7 +315,7 @@ export default function HomeScreen() {
                       setFilters({
                         category: selectedCategory ? String(selectedCategory) : undefined,
                         city: selectedCity?.label ? String(selectedCity.label) : undefined,
-                        delegation: selectedDelegation && selectedCity?.delegations.find(d => d.id === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => d.id === selectedDelegation)?.label) : undefined,
+                      delegation: selectedDelegation && selectedCity?.delegations.find(d => String(d.id) === selectedDelegation)?.label ? String(selectedCity.delegations.find(d => String(d.id) === selectedDelegation)?.label) : undefined,
                       });
                       setShowAdvancedSearch(false);
                     }}
@@ -395,7 +405,7 @@ export default function HomeScreen() {
                               key={delegation.id}
                               style={styles.modalItem}
                               onPress={() => {
-                                setSelectedDelegation(delegation.id);
+                                setSelectedDelegation(String(delegation.id));
                                 setShowDelegationModal(false);
                               }}
                             >
@@ -427,6 +437,12 @@ export default function HomeScreen() {
         ListFooterComponent={renderFooter}
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        getItemLayout={getItemLayout}
+        initialNumToRender={initialNumToRender}
+        maxToRenderPerBatch={maxToRenderPerBatch}
+        windowSize={windowSize}
+        updateCellsBatchingPeriod={50}
       />
     </SafeAreaView>
   );

@@ -18,6 +18,8 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Theme.colors.primary,
         tabBarInactiveTintColor: Theme.colors.text.secondary,
+        tabBarShowLabel: true,
+        tabBarLabelPosition: 'below-icon',
         tabBarStyle: styles.tabBar,
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: styles.tabBarLabel,
@@ -30,6 +32,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'الرئيسية',
+          tabBarLabel: 'الرئيسية',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -42,6 +45,7 @@ export default function TabLayout() {
         name="favorites"
         options={{
           title: 'المفضلة',
+          tabBarLabel: 'المفضلة',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -62,6 +66,7 @@ export default function TabLayout() {
         name="new-listing"
         options={{
           title: 'إضافة عقار',
+          tabBarLabel: '',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -84,6 +89,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'حسابي',
+          tabBarLabel: 'حسابي',
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <View style={styles.iconContainer}>
@@ -117,12 +123,9 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontFamily: 'Tajawal-Medium',
     fontSize: 12,
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    right: 0,
     textAlign: 'center',
-    width: '100%',
+    marginTop: 2,
+    includeFontPadding: false,
   },
   header: {
     backgroundColor: Theme.colors.background.main,
@@ -139,11 +142,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabBarIcon: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -152,7 +150,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 24,
     width: '100%',
-    marginBottom: 15,
   },
   addButton: {
     width: 48,

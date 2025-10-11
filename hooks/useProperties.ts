@@ -32,7 +32,6 @@ export function useProperties(options: UsePropertiesOptions = {}) {
       let countQuery = supabase
         .from('properties')
         .select('*', { count: 'exact' });
-      
       if (options.status) {
         countQuery = countQuery.eq('status', options.status);
       }
@@ -50,6 +49,7 @@ export function useProperties(options: UsePropertiesOptions = {}) {
         .order('created_at', { ascending: false });
       
       // Apply additional filters if provided
+      
       if (options.status) {
         query = query.eq('status', options.status);
       }

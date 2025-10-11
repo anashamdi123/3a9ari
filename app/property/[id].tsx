@@ -9,8 +9,8 @@ import { Phone, MapPin, ChevronRight, ChevronLeft, Heart, ArrowLeft, X } from 'l
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuthContext } from '@/context/auth-context';
 import { CURRENCY, PROPERTY_CATEGORIES, AREA_UNITS, PRICE_UNITS } from '@/constants/config';
-import { GestureHandlerRootView, PinchGestureHandler, PinchGestureHandlerGestureEvent } from 'react-native-gesture-handler';
-import Animated, { useAnimatedGestureHandler, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 const { width } = Dimensions.get('window');
 
@@ -99,14 +99,13 @@ export default function PropertyDetailScreen() {
     savedScale.value = 1;
   };
   
-  const onPinchGestureEvent = useAnimatedGestureHandler<PinchGestureHandlerGestureEvent>({
-    onActive: (event) => {
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
       scale.value = savedScale.value * event.scale;
-    },
-    onEnd: () => {
+    })
+    .onEnd(() => {
       savedScale.value = scale.value;
-    },
-  });
+    });
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -288,7 +287,7 @@ export default function PropertyDetailScreen() {
               contentOffset={{ x: currentImageIndex * width, y: 0 }}
             >
               {property.images.map((image, index) => (
-                <PinchGestureHandler key={index} onGestureEvent={onPinchGestureEvent}>
+                <GestureDetector key={index} gesture={pinchGesture}>
               <Animated.View style={[styles.fullscreenImageContainer, animatedStyle]}>
                     <View>
                 <Image
@@ -307,7 +306,7 @@ export default function PropertyDetailScreen() {
                       )}
                     </View>
               </Animated.View>
-            </PinchGestureHandler>
+            </GestureDetector>
               ))}
             </ScrollView>
             

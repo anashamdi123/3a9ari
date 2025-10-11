@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ interface PropertyCardProps {
   onFavoriteToggle?: (propertyId: string) => void;
 }
 
-export function PropertyCard({ property, onFavoriteToggle }: PropertyCardProps) {
+function PropertyCardComponent({ property, onFavoriteToggle }: PropertyCardProps) {
   const router = useRouter();
   const { isAuthenticated, user } = useAuthContext();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -73,6 +73,9 @@ export function PropertyCard({ property, onFavoriteToggle }: PropertyCardProps) 
           }
           style={styles.image}
           contentFit="cover"
+          cachePolicy="disk"
+          recyclingKey={property.id}
+          priority="low"
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
           transition={100}
@@ -137,6 +140,25 @@ export function PropertyCard({ property, onFavoriteToggle }: PropertyCardProps) 
     </TouchableOpacity>
   );
 }
+
+const areEqual = (prev: PropertyCardProps, next: PropertyCardProps) => {
+  const p = prev.property;
+  const n = next.property;
+  if (p.id !== n.id) return false;
+  if (p.title !== n.title) return false;
+  if (p.location !== n.location) return false;
+  if (p.price !== n.price) return false;
+  if (p.price_unit !== n.price_unit) return false;
+  if (p.size !== n.size) return false;
+  if (p.size_unit !== n.size_unit) return false;
+  if (p.category !== n.category) return false;
+  const pImg = Array.isArray(p.images) && p.images.length ? p.images[0] : undefined;
+  const nImg = Array.isArray(n.images) && n.images.length ? n.images[0] : undefined;
+  if (pImg !== nImg) return false;
+  return prev.onFavoriteToggle === next.onFavoriteToggle;
+};
+
+export const PropertyCard = memo(PropertyCardComponent, areEqual);
 
 // styles (unchanged — same as your code)
 const styles = StyleSheet.create({

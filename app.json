@@ -1,14 +1,14 @@
 {
   "expo": {
     "name": "3a9ari",
-    "slug": "3a9ari",
+    "slug": "akari",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "assets/images/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#1a2121"
     },
@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
+        "foregroundImage": "assets/images/logo.png",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.anash.akari"
@@ -28,7 +28,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/icon.png"
+      "favicon": "assets/images/icon.png"
     },
     "plugins": [
       "expo-router",
@@ -42,8 +42,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "d6c481f0-cb7e-4e12-9b79-f668395b4b87"
+        "projectId": "471c262f-fb9c-49dc-8f9e-bf34c0e559a8"
       }
-    }
+    },
+    "owner": "amineherchi"
   }
 }
